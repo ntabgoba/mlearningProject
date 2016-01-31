@@ -1,0 +1,102 @@
+## Prediction with the Quantified self data 
+### Introduction
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+###Loading the required packages
+```{r}
+library(caret)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+library(corrplot)
+```
+### Download the training and test datasets from the original for reproducibility
+```{r}
+trainlink <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testlink <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+traincsv <- "./data/pml-training.csv"
+testcsv  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(traincsv)) {
+  download.file(traincsv, destfile=traincsv, method="curl")
+}
+if (!file.exists(testcsv)) {
+  download.file(testcsv, destfile=testcsv, method="curl")
+}
+```
+### Load the downloaded data
+```{r}
+trainRaw <- read.csv("./data/pml-training.csv")
+testRaw <- read.csv("./data/pml-testing.csv")
+```
+### Clean the data  
+```{r}
+sum(complete.cases(trainRaw))
+```
+Get rid of NAs
+```{r}
+trainRaw <- trainRaw[, colSums(is.na(trainRaw)) == 0] 
+testRaw <- testRaw[, colSums(is.na(testRaw)) == 0] 
+```
+Remove columns that don't make any difference to accelerometer measurements
+```{r}
+classe <- trainRaw$classe
+trainRemove <- grepl("^X|timestamp|window", names(trainRaw))
+trainRaw <- trainRaw[, !trainRemove]
+trainCleaned <- trainRaw[, sapply(trainRaw, is.numeric)]
+trainCleaned$classe <- classe
+testRemove <- grepl("^X|timestamp|window", names(testRaw))
+testRaw <- testRaw[, !testRemove]
+testCleaned <- testRaw[, sapply(testRaw, is.numeric)]
+```
+### Slice the data set into Training and Test sets
+
+```{r}
+set.seed(4321) #For reproducibility
+inTrain <- createDataPartition(trainCleaned$classe, p=0.80, list=F)
+trainData <- trainCleaned[inTrain, ]
+testData <- trainCleaned[-inTrain, ]
+```
+### Apply random forest
+Use random forest to fit a predictive model. Random Forest will automatically select
+relevant variables.
+```{r}
+controlRf <- trainControl(method="cv", 5)
+modelRf <- train(classe ~ ., data=trainData, method="rf", trControl=controlRf, ntree=250)
+modelRf
+```
+Estimate the perfomance of the model on the validation data set.
+```{r}
+predictRf <- predict(modelRf, testData)
+confusionMatrix(testData$classe, predictRf)
+```
+Carry out a post resample fro accuracy testing
+```{r}
+accuracy <- postResample(predictRf, testData$classe)
+accuracy
+```
+
+```{r}
+fuse <- 1 - as.numeric(confusionMatrix(testData$classe, predictRf)$overall[1])
+fuse
+```
+### Predict on the Test Data 
+Try to fit the model on the testing data set fro comparison
+```{r}
+result <- predict(modelRf, testCleaned[, -length(names(testCleaned))])
+result
+```
+Tree visuals
+```{r}
+treeModel <- rpart(classe ~ ., data=trainData, method="class")
+prp(treeModel) 
+```
+Correlation matrix visualization
+```{r}
+corrPlot <- cor(trainData[, -length(names(trainData))])
+corrplot(corrPlot, method="color")
+```
+
+
